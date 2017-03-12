@@ -17,6 +17,7 @@ from keras.models import Sequential
 from keras.layers import Dense
 from keras.optimizers import RMSprop
 from keras.regularizers import l2
+from sklearn import metrics
 
 def get_feat(column):
     feat_labels = column.drop_duplicates()
@@ -40,25 +41,19 @@ train_users.head()
 
 #%%
 tr_bias_feat = np.ones((len(train_users),1))
-val_bias_feat = np.ones((len(val_users),1))
 
 #%%
 tr_month_feat = pd.to_numeric(train_users['date_account_created'].str[5:7])
 tr_month_feat = np.array(tr_month_feat - tr_month_feat.mean(),ndmin = 2).transpose()
 
-val_month_feat = pd.to_numeric(val_users['date_account_created'].str[5:7])
-val_month_feat = np.array(val_month_feat - val_month_feat.mean(),ndmin = 2).transpose()
 #%%
 tr_gender_feat = get_feat(train_users['gender'])
-val_gender_feat = get_feat(val_users['gender'])
 
 #%%
 tr_affiliate_feat = get_feat(train_users['affiliate_provider'])
-val_affiliate_feat = get_feat(val_users['affiliate_provider'])
 
 #%%
 tr_device_feat = get_feat(train_users['first_device_type'])
-val_device_feat = get_feat(val_users['first_device_type'])
 #%%
 actions = sessions['action'].dropna().drop_duplicates().reset_index(drop =True)
 #del actions['index']
@@ -68,23 +63,12 @@ for actionNum in range(len(actions)):
     user_action = sessions[sessions['action'] == actions[actionNum]]
     actionBin[:,actionNum] = train_users['id'].isin(user_action['user_id'])    
 
-
-
-
-
-
-
 #%%
-
-
-
 tr_feature = np.hstack((tr_bias_feat,tr_month_feat,tr_gender_feat,tr_affiliate_feat,tr_device_feat,actionBin))
+feat_len = tr_feature.shape[1]
 tr_target = train_users['country_destination'] == 'NDF'
 tr_tot = np.hstack((tr_feature,np.array(tr_target,ndmin=2).transpose()))
 
-
-#%%
-val_acc = sum(np.abs(np.bitwise_xor(g,val_target)))/len(val_target)
 
 #%%
 def get_val_tr(data,section):
@@ -107,9 +91,9 @@ def symmetrize_data(data):
 
 
 #%%
-def get_model():
+def get_model(feat_len):
     model = Sequential()
-    model.add(Dense(400, input_dim=391, activation='relu',W_regularizer=l2(0.005)))
+    model.add(Dense(400, input_dim=feat_len, activation='relu',W_regularizer=l2(0.005)))
     model.add(Dense(400, activation = 'relu',W_regularizer=l2(0.005)))
     model.add(Dense(400,activation = 'relu',W_regularizer=l2(0.005)))
     model.add(Dense(1,activation = 'sigmoid'))
@@ -122,15 +106,13 @@ truefalse = []
 for i in range(10):
     val, tr = get_val_tr(tr_tot,i)
     tr = symmetrize_data(tr)
-    model = get_model()
-    history = model.fit(tr[:,:391],tr[:,391],batch_size = 2000,nb_epoch = 20,verbose = 1)
-    y_score = model.predict_proba(val[:,:391])
-    roc_auc.append(metrics.roc_auc_score(val[:,391],y_score))
+    model = get_model(feat_len)
+    history = model.fit(tr[:,:feat_len],tr[:,feat_len],batch_size = 2000,nb_epoch = 20,verbose = 1)
+    y_score = model.predict_proba(val[:,:feat_len])
+    roc_auc.append(metrics.roc_auc_score(val[:,feat_len],y_score))
     print('roc_auc = ' + str(roc_auc) + '\n')
-    truefalse.append(metrics.roc_curve(val[:,391],y_score))
-    
-
-
+    truefalse.append(metrics.roc_curve(val[:,feat_len],y_score))
+    del model
 
 #%%
 plt.rc('xtick', labelsize=10) 
